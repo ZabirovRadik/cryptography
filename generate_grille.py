@@ -24,7 +24,7 @@ def generate():
 
 
 def main():
-    path = sys.argv[1] if len(sys.argv) > 1 else "grille.txt"
+    path = sys.argv[1] if len(sys.argv) > 1 else "INPUT//grille.txt"
     holes = generate()
     lines = ["".join("1" if (r, c) in holes else "0" for c in range(N)) for r in range(N)]
     with open(path, "w", encoding="utf-8") as f:
