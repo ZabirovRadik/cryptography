@@ -1,7 +1,8 @@
 import random
 import sys
 
-PAD = "АБВГДЕЖЗИКЛМНОПРСТУФХЦЧШЭЮЯ"
+ALPHABET = "абвгдежзийклмнопрстуфхцчшщъыьэюяё"
+SEPARATORS = " \n\r"
 
 
 def rotate_cell(r, c, n):
@@ -17,7 +18,7 @@ def load_grille(path):
         lines = [line.strip() for line in f if line.strip()]
     n = len(lines)
     if n == 0 or n % 2:
-        raise ValueError("Размер решётки должен быть чётным числом")
+        raise ValueError("Размер решётки должен быть чётным числом больше нуля")
     if any(len(line) != n or set(line) - {"0", "1"} for line in lines):
         raise ValueError("Файл решётки должен быть квадратом из символов 0 и 1")
     holes = sorted((r, c) for r in range(n) for c in range(n) if lines[r][c] == "1")
@@ -31,10 +32,32 @@ def load_grille(path):
     return holes, n
 
 
+def read_message(path):
+    with open(path, encoding="utf-8", newline="") as f:
+        raw = f.read()
+    for ch in raw:
+        if ch not in SEPARATORS and ch not in ALPHABET:
+            raise ValueError(f"Недопустимый символ {ch!r}")
+    return raw
+
+
+def merge(template, letters):
+    out = []
+    pos = 0
+    for ch in template:
+        if ch in SEPARATORS:
+            out.append(ch)
+        else:
+            out.append(letters[pos])
+            pos += 1
+    out.append(letters[pos:])
+    return "".join(out)
+
+
 def encrypt(text, holes, n):
     block_len = n * n
     if len(text) % block_len:
-        text += "".join(random.choice(PAD) for _ in range(block_len - len(text) % block_len))
+        text += "".join(random.choice(ALPHABET) for _ in range(block_len - len(text) % block_len))
     out = []
     for b in range(0, len(text), block_len):
         block = text[b:b + block_len]
@@ -53,7 +76,7 @@ def encrypt(text, holes, n):
 def decrypt(cipher, holes, n):
     block_len = n * n
     if len(cipher) % block_len:
-        raise ValueError(f"Длина шифртекста должна быть кратна {block_len}")
+        raise ValueError(f"Количество букв в шифртексте должно быть кратно {block_len}")
     out = []
     for b in range(0, len(cipher), block_len):
         block = cipher[b:b + block_len]
@@ -72,15 +95,11 @@ def main():
         sys.exit(1)
     mode, grille_path, in_path, out_path = sys.argv[1:]
     holes, n = load_grille(grille_path)
-    with open(in_path, encoding="utf-8") as f:
-        raw = f.read()
-    if mode == "enc":
-        data = " ".join(line.strip() for line in raw.splitlines() if line.strip())
-        result = encrypt(data, holes, n)
-    else:
-        result = decrypt(raw.rstrip("\r\n"), holes, n)
-    with open(out_path, "w", encoding="utf-8") as f:
-        f.write(result + "\n")
+    raw = read_message(in_path)
+    letters = "".join(ch for ch in raw if ch not in SEPARATORS)
+    result = encrypt(letters, holes, n) if mode == "enc" else decrypt(letters, holes, n)
+    with open(out_path, "w", encoding="utf-8", newline="") as f:
+        f.write(merge(raw, result))
     print(f"Готово (решётка {n}x{n}), результат записан в {out_path}")
 
 
