@@ -1,84 +1,59 @@
-"""Вариант 14: селектирующий генератор + тесты рангов матриц, кумулятивных сумм, произвольных отклонений.
-
-Запуск:  python3 main.py [--nbits 1000000] [--out sequence.txt]
-Рядом должны лежать data.pi и data.e (или папка constants/ с ними).
-"""
-import argparse
+import os
 from math import gcd
 
-from gen import SelectingGenerator, is_primitive, find_primitive, poly_str, deg
-from constants import pi_bits, e_bits
-import nist_tests as T
+from gen import SelectingGenerator, is_primitive
+import nist_tests
+
+N = 1_000_000
 
 
-def mark(ok):
-    return "пройден" if ok else "НЕ пройден"
+def load_bits(name, n):
+    here = os.path.dirname(os.path.abspath(__file__))
+    for folder in (here, os.path.join(here, "constants")):
+        path = os.path.join(folder, name)
+        if os.path.exists(path):
+            with open(path) as f:
+                return [int(ch) for ch in f.read() if ch in "01"][:n]
+    raise FileNotFoundError(name)
 
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--nbits", type=int, default=1_000_000)
-    ap.add_argument("--out", default="sequence.txt")
-    args = ap.parse_args()
+print("x^7 + x + 1 примитивен:", is_primitive([7, 1, 0]))
+print("x^7 + x^5 + x^3 + 1 примитивен:", is_primitive([7, 5, 3, 0]))
 
-    # --- 1. примитивность многочленов из задания ---
-    print("Примитивность по модулю 2:")
-    for name, f in (("x^7 + x + 1", 0b10000011), ("x^7 + x^5 + x^3 + 1", 0b10101001)):
-        print(f"  {name}: {'примитивен' if is_primitive(f) else 'НЕ примитивен'}")
+polys = [[7, 1, 0], [29, 2, 0], [31, 3, 0]]
+seeds = [0b1011001, 0x0ABCDEF1 & (2 ** 29 - 1), 0x2D3C4B5A & (2 ** 31 - 1)]
+periods = [2 ** p[0] - 1 for p in polys]
+assert all(is_primitive(p) for p in polys)
+assert all(gcd(a, b) == 1 for i, a in enumerate(periods) for b in periods[i + 1:])
+gen = SelectingGenerator(polys, seeds)
 
-    # --- 2. генератор и период ---
-    pa, pb, pc = 0b10000011, find_primitive(29), find_primitive(31)
-    seeds = (0b1011001, 0x0ABCDEF1 & ((1 << 29) - 1), 0x2D3C4B5A & ((1 << 31) - 1))
-    g = SelectingGenerator(pa, pb, pc, *seeds)
-    print("\nГенератор (A управляет выбором между B и C):")
-    for role, p in (("A", pa), ("B", pb), ("C", pc)):
-        print(f"  {role}: {poly_str(p)}")
-    periods = [(1 << deg(p)) - 1 for p in (pa, pb, pc)]
-    assert all(gcd(x, y) == 1 for i, x in enumerate(periods) for y in periods[i + 1:])
-    print(f"  период = {periods[0]} * {periods[1]} * {periods[2]} = {g.theoretical_period():.3e} (максимальный)")
+small = SelectingGenerator([[5, 2, 0], [7, 1, 0], [6, 1, 0]], [0b10110, 0b1011001, 0b110101])
+print(f"Период генератора: {gen.theoretical_period():.3e} "
+      f"(проверка на малых регистрах: формула {small.theoretical_period()}, измерено {small.measured_period()})")
 
-    small = SelectingGenerator(find_primitive(5), 0b10000011, find_primitive(6), 0b10110, 0b1011001, 0b110101)
-    P_th, P_ms = small.theoretical_period(), small.measured_period()
-    print(f"  проверка программой на малых регистрах (5, 7, 6): формула {P_th}, измерено {P_ms} "
-          f"-> {'совпало' if P_th == P_ms else 'НЕ совпало'}")
+seq = gen.bits(N)
+with open("sequence.txt", "w") as f:
+    f.write("".join(map(str, seq)))
 
-    # --- 3. последовательность и тесты ---
-    seq = list(g.fresh().bits(args.nbits))
-    with open(args.out, "w") as fh:
-        fh.write("".join(map(str, seq)))
-    data = {"pi": pi_bits(args.nbits), "e": e_bits(args.nbits), "Генератор": seq}
+kind = lambda bits: "e" if bits[1] == 0 else "pi"    # pi = 11.001..., e = 10.101...
+data = {}
+for name in ("data.pi", "data.e"):
+    bits = load_bits(name, N)
+    data[f"{name} [{kind(bits)}]"] = bits
+data["Генератор"] = seq
 
-    res = {}
-    for name, bits in data.items():
-        res[name] = (T.binary_matrix_rank_test(bits), T.cumulative_sums_test(bits),
-                     T.random_excursions_test(bits))
-
-    # Таблица в том же порядке строк, что и в методичке (n = 10^6)
-    print(f"\nP-value, n = {args.nbits} (порог {T.ALPHA}; + пройден, - не пройден):")
-    print(f"{'Тест':<30}" + "".join(f"{n:<16}" for n in data))
-    print("-" * (30 + 16 * len(data)))
-
-    def row(title, cell):
-        print(f"{title:<30}" + "".join(f"{cell(res[n]):<16}" for n in data))
-
-    def pv(p):
-        return f"{p:.6f} {'+' if p >= T.ALPHA else '-'}"
-
-    row("Кумул. сумм, forward", lambda r: pv(r[1]["forward"]["p"]))
-    row("Кумул. сумм, reverse", lambda r: pv(r[1]["backward"]["p"]))
-    row("Произв. отклонения, x=+1",
-        lambda r: pv(r[2]["states"][1]["p"]) if r[2]["applicable"] else "неприменим")
-    row("Рангов бинарных матриц", lambda r: pv(r[0]["p"]))
-
-    # остальные состояния x теста на произвольные отклонения: сообщаем только о неудачах
-    for name in data:
-        e = res[name][2]
-        if e["applicable"]:
-            bad = [f"x={x:+d} (P={v['p']:.4f})" for x, v in e["states"].items() if not v["passed"]]
-            if bad:
-                print(f"  Прим.: {name}, другие состояния x не прошли: {', '.join(bad)}")
-    print(f"\nПоследовательность записана в {args.out}")
+res = {name: (nist_tests.cusum_test(b), nist_tests.excursions_test(b), nist_tests.rank_test(b)) for name, b in data.items()}
 
 
-if __name__ == "__main__":
-    main()
+def cell(p):
+    return "неприменим" if p is None else f"{p:.6f} {'+' if p >= nist_tests.ALPHA else '-'}"
+
+
+print(f"\nP-value, n = {N}:")
+print(f"{'':<28}" + "".join(f"{name:<18}" for name in data))
+rows = [("Кумул. сумм, forward", lambda r: r[0][0]),
+        ("Кумул. сумм, reverse", lambda r: r[0][1]),
+        ("Произв. отклонения, x=+1", lambda r: r[1] and r[1][1]),
+        ("Рангов бинарных матриц", lambda r: r[2])]
+for title, get in rows:
+    print(f"{title:<28}" + "".join(f"{cell(get(res[name])):<18}" for name in data)) 
