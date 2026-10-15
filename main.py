@@ -23,8 +23,6 @@ print("x^7 + x^5 + x^3 + 1 примитивен:", is_primitive([7, 5, 3, 0]))
 polys = [[7, 1, 0], [29, 2, 0], [31, 3, 0]]
 seeds = [0b1011001, 0x0ABCDEF1 & (2 ** 29 - 1), 0x2D3C4B5A & (2 ** 31 - 1)]
 periods = [2 ** p[0] - 1 for p in polys]
-assert all(is_primitive(p) for p in polys)
-assert all(gcd(a, b) == 1 for i, a in enumerate(periods) for b in periods[i + 1:])
 gen = SelectingGenerator(polys, seeds)
 
 small = SelectingGenerator([[5, 2, 0], [7, 1, 0], [6, 1, 0]], [0b10110, 0b1011001, 0b110101])

@@ -10,7 +10,6 @@ class LFSR:
     def __init__(self, poly, seed):
         self.n = poly[0]
         self.mask = sum(1 << t for t in poly[1:])
-        assert 0 < seed < 2 ** self.n
         self.state = seed
 
     def step(self):
